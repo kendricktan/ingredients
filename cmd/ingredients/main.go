@@ -2,32 +2,58 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
-	"os"
+	"log"
+	"net/http"
 
+	"github.com/apex/gateway"
 	"github.com/schollz/ingredients"
-	log "github.com/schollz/logger"
 )
 
 func main() {
-	log.SetLevel("error")
-	if len(os.Args) < 2 {
-		log.Error("usage: ingredients [file/url]")
-		os.Exit(1)
+	port := flag.Int("port", -1, "specify a port to use http rather than AWS Lambda")
+	flag.Parse()
+
+	listener := gateway.ListenAndServe
+	portStr := fmt.Sprintf(":%d", *port)
+	if *port != -1 {
+		portStr = fmt.Sprintf(":%d", *port)
+		listener = http.ListenAndServe
 	}
+
+	fmt.Printf("listening on port %d\n", *port)
+
+	getIngredientsHandler := http.HandlerFunc(getIngredients)
+	http.Handle("/", getIngredientsHandler)
+
+	log.Fatal(listener(portStr, logRequest(http.DefaultServeMux)))
+}
+
+func getIngredients(resp http.ResponseWriter, req *http.Request) {
+	query := req.URL.Query()
+	url := query.Get("url")
 
 	var r *ingredients.Recipe
 	var err error
 
-	r, err = ingredients.NewFromFile(os.Args[1])
+	r, err = ingredients.NewFromURL(url)
 	if err != nil {
-		r, err = ingredients.NewFromURL(os.Args[1])
-		if err != nil {
-			log.Error("usage: ingredients [file/url]")
-			os.Exit(1)
-		}
+		resp.WriteHeader(400)
+		resp.Write([]byte("Missing 'url' in url parameter"))
+		return
 	}
+
 	ing := r.IngredientList()
 	b, _ := json.MarshalIndent(ing, "", "    ")
-	fmt.Println(string(b))
+
+	resp.WriteHeader(200)
+	resp.Write([]byte(b))
+}
+
+func logRequest(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s %s %s\n", r.RemoteAddr, r.Method, r.URL)
+		handler.ServeHTTP(w, r)
+	})
 }
