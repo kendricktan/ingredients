@@ -31,6 +31,9 @@ func main() {
 }
 
 func getIngredients(resp http.ResponseWriter, req *http.Request) {
+	// Enable cors
+	resp.Header().Set("Access-Control-Allow-Origin", "*")
+
 	query := req.URL.Query()
 	url := query.Get("url")
 
